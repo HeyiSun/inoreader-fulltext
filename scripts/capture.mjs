@@ -8,7 +8,7 @@ import { XMLParser } from "fast-xml-parser";
 const outputDirectory = "artifacts";
 const workerUrl = process.env.WORKER_URL?.replace(/\/$/, "");
 const publishSecret = process.env.PUBLISH_SECRET;
-const allowedHosts = new Set(["openai.com", "www.openai.com", "developers.openai.com"]);
+const allowedHosts = new Set(["openai.com", "www.openai.com", "developers.openai.com", "konghq.com", "www.konghq.com"]);
 const articles = JSON.parse(process.env.ARTICLE_INPUT || "[]");
 const feedCache = new Map();
 const fallbackFigureCss = await readFile(new URL("./openai-figures.css", import.meta.url), "utf8");
@@ -21,7 +21,7 @@ for (const article of articles) {
   if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
     throw new Error("Article domain is not enabled");
   }
-  if (!["openai-engineering", "openai-research", "openai-developer"].includes(article.source)) {
+  if (!["openai-engineering", "openai-research", "openai-developer", "kong"].includes(article.source)) {
     throw new Error("Unknown feed");
   }
 }
@@ -52,7 +52,11 @@ async function publishImage(buffer, articleId, index) {
 }
 
 async function loadArticle(page, url) {
-  const selector = new URL(url).hostname === "developers.openai.com" ? "main" : "#main article";
+  const selector = {
+    "developers.openai.com": "main",
+    "konghq.com": "main .toc-body",
+    "www.konghq.com": "main .toc-body"
+  }[new URL(url).hostname] || "#main article";
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator(selector).waitFor({ state: "visible", timeout: 10000 });
   await page.evaluate(async selector => {
@@ -72,6 +76,7 @@ async function loadArticle(page, url) {
 }
 
 async function loadFromFulltextFeed(page, article) {
+  if (article.source === "kong") throw new Error("Kong article page could not be loaded");
   const routes = article.source === "openai-research"
     ? ["https://rsshub.rss3.workers.dev/openai/research?limit=40", "https://rsshub.rssforever.com/openai/news?limit=100"]
     : ["https://rsshub.rssforever.com/openai/news?limit=100", "https://rsshub.rssforever.com/openai/news?limit=50"];

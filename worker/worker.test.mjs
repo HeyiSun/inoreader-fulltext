@@ -18,6 +18,27 @@ test("disabled websites are rejected", () => {
   assert.throws(() => normalizeItems({ items: [{ url: "https://example.com/" }] }), /not enabled/);
 });
 
+test("Kong articles retain their source and published time", () => {
+  const [item] = normalizeItems({ items: [{
+    title: "Kong article",
+    canonical: [{ href: "https://konghq.com/blog/engineering/example" }],
+    origin: { streamId: "feed/https://konghq.com/feed/rss/blogs" },
+    published: 1794898800
+  }] });
+  assert.equal(item.source, "kong");
+  assert.equal(item.published, 1794898800);
+});
+
+test("Kong feed points to the publisher website", async () => {
+  const response = await worker.fetch(new Request("https://worker.test/rss/kong.xml"), {
+    CONTENT: { list: async () => ({ keys: [] }) }
+  });
+  const xml = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(xml, /Kong Blog 全文/);
+  assert.match(xml, /<link>https:\/\/konghq.com\/blog<\/link>/);
+});
+
 test("public feed requests work without publishing credentials", async () => {
   const response = await worker.fetch(new Request("https://worker.test/rss/openai-engineering.xml"), {
     CONTENT: { list: async () => ({ keys: [] }) }

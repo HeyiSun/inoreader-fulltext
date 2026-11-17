@@ -1,6 +1,6 @@
 # Inoreader full text
 
-Inoreader rules send new OpenAI articles to a Cloudflare Worker. The Worker starts a GitHub Actions job. The job captures article text and images, renders SVG figures as PNG, and publishes a full-text RSS feed from Workers KV.
+Inoreader rules send new OpenAI and Kong articles to a Cloudflare Worker. The Worker starts a GitHub Actions job. The job captures article text and images, renders SVG figures as PNG, and publishes a full-text RSS feed from Workers KV.
 
 This project uses Cloudflare's free Workers and KV allowances and standard GitHub-hosted runners in a public repository. Article feeds and their images are public. Webhook and publishing credentials are secrets.
 
@@ -12,8 +12,8 @@ This project uses Cloudflare's free Workers and KV allowances and standard GitHu
 4. Configure the Worker secrets `HOOK_SECRET`, `GITHUB_TOKEN`, and `PUBLISH_SECRET`.
 5. Set the repository variable `WORKER_URL` and secret `PUBLISH_SECRET`.
 6. Give the Worker's fine-grained GitHub token access to this repository with Actions write permission.
-7. Configure Inoreader rules to POST new OpenAI articles to `/hooks/<HOOK_SECRET>`.
-8. Subscribe to `/rss/openai-engineering.xml`, `/rss/openai-research.xml`, or `/rss/openai-developer.xml`.
+7. Configure Inoreader rules to POST new OpenAI and Kong articles to `/hooks/<HOOK_SECRET>`.
+8. Subscribe to the matching live feed below.
 
 The workflow is event-triggered and can also be run manually from GitHub Actions. It has no periodic polling schedule. Existing article URLs are cached. A manual input can include `force: true` to recapture an article.
 
@@ -22,12 +22,15 @@ The workflow is event-triggered and can also be run manually from GitHub Actions
 - [OpenAI Engineering](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-engineering.xml)
 - [OpenAI Research](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-research.xml)
 - [OpenAI Developer Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-developer.xml)
+- [Kong Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/kong.xml)
 
 The original Inoreader subscriptions trigger capture jobs. Read the generated subscriptions for the extracted content. Each output feed contains the latest 20 captured articles. Successful publications notify a WebSub hub, while delivery timing also depends on Inoreader's feed refresh.
 
 ## Extraction limits
 
 The job first opens the original article in Chromium. If the original page cannot be read, it tries public RSSHub full-text feeds. Ordinary images retain their original URLs. Contentful SVG image URLs request a PNG rendition, and inline SVG figures are rendered into PNG files stored in Workers KV. The fallback includes styles for the Git and storage diagram components checked during setup.
+
+Kong uses the article's `.toc-body` container, retaining the article text, code blocks and images. It requires the original Kong article page to be accessible.
 
 Interactive figures become static snapshots. Figures that require unavailable client-side data retain a link to the original article. A changed website layout, unavailable upstream feed, or an expired GitHub trigger token can require maintenance. Failed captures are visible in GitHub Actions and can be rerun there. This deployment uses no AI model calls.
 

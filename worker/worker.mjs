@@ -1,10 +1,11 @@
 const SOURCES = {
   "openai-engineering": "OpenAI Engineering 全文",
   "openai-research": "OpenAI Research 全文",
-  "openai-developer": "OpenAI Developer Blog 全文"
+  "openai-developer": "OpenAI Developer Blog 全文",
+  "kong": "Kong Blog 全文"
 };
 
-const ALLOWED_HOSTS = new Set(["openai.com", "www.openai.com", "developers.openai.com"]);
+const ALLOWED_HOSTS = new Set(["openai.com", "www.openai.com", "developers.openai.com", "konghq.com", "www.konghq.com"]);
 
 export function escapeXml(value) {
   return String(value).replace(/[<>&"']/g, char => ({
@@ -26,6 +27,7 @@ export function normalizeItems(payload) {
     let source = "openai-research";
     if (url.hostname === "developers.openai.com") source = "openai-developer";
     if (origin.includes("engineering")) source = "openai-engineering";
+    if (url.hostname === "konghq.com" || url.hostname === "www.konghq.com") source = "kong";
     if (item.source && SOURCES[item.source]) source = item.source;
     return {
       url: url.href,
@@ -49,6 +51,7 @@ function json(data, status = 200) {
 async function renderFeed(request, env, source) {
   const base = new URL(request.url).origin;
   const feedUrl = base + `/rss/${source}.xml`;
+  const websiteUrl = source === "kong" ? "https://konghq.com/blog" : "https://openai.com/news/";
   const listed = await env.CONTENT.list({ prefix: `article:${source}:`, limit: 1000 });
   const newest = listed.keys.sort((a, b) => (b.metadata?.published || 0) - (a.metadata?.published || 0)).slice(0, 20);
   const entries = (await Promise.all(newest.map(key => env.CONTENT.get(key.name, "json")))).filter(Boolean);
@@ -66,7 +69,7 @@ async function renderFeed(request, env, source) {
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>${escapeXml(SOURCES[source])}</title>
-    <link>https://openai.com/news/</link>
+    <link>${escapeXml(websiteUrl)}</link>
     <description>保留配图和静态图表的全文阅读源</description>
     <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml"/>
     <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub"/>
