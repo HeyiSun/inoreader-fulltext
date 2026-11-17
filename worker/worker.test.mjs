@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { gzipSync, gunzipSync } from "node:zlib";
 import worker, { normalizeItems } from "./worker.mjs";
 
 test("Inoreader payload preserves identity and selects the engineering feed", () => {
@@ -53,4 +54,27 @@ test("publishing requires authorization", async () => {
     PUBLISH_SECRET: "test-secret"
   });
   assert.equal(response.status, 401);
+});
+
+test("historical RSS archives are published privately and served as gzip", async () => {
+  const xml = '<rss version="2.0"><channel><title>Kong history</title></channel></rss>';
+  let stored;
+  const env = {
+    PUBLISH_SECRET: "test-secret",
+    CONTENT: {
+      put: async (key, value, options) => { stored = { key, value, metadata: options.metadata }; },
+      getWithMetadata: async key => key === stored.key ? stored : { value: null }
+    }
+  };
+  const published = await worker.fetch(new Request("https://worker.test/api/archives/kong-technical-history", {
+    method: "PUT",
+    headers: { Authorization: "Bearer test-secret", "X-Article-Count": "384" },
+    body: gzipSync(xml)
+  }), env);
+  assert.equal(published.status, 201);
+  assert.equal(stored.metadata.count, 384);
+  const response = await worker.fetch(new Request("https://worker.test/rss/kong-technical-history.xml"), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Encoding"), "gzip");
+  assert.equal(gunzipSync(Buffer.from(await response.arrayBuffer())).toString(), xml);
 });

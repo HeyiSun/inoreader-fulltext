@@ -1,3 +1,6 @@
+import { renderRss } from "../lib/rss.mjs";
+export { escapeXml } from "../lib/rss.mjs";
+
 const SOURCES = {
   "openai-engineering": "OpenAI Engineering 全文",
   "openai-research": "OpenAI Research 全文",
@@ -6,12 +9,9 @@ const SOURCES = {
 };
 
 const ALLOWED_HOSTS = new Set(["openai.com", "www.openai.com", "developers.openai.com", "konghq.com", "www.konghq.com"]);
+const KONG_ARCHIVE_PATH = "/rss/kong-technical-history.xml";
+const KONG_ARCHIVE_KEY = "archive:kong-technical-history";
 
-export function escapeXml(value) {
-  return String(value).replace(/[<>&"']/g, char => ({
-    "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;"
-  })[char]);
-}
 
 export function normalizeItems(payload) {
   if (!Array.isArray(payload.items) || payload.items.length > 20) {
@@ -59,27 +59,13 @@ async function renderFeed(request, env, source) {
   const listed = await env.CONTENT.list({ prefix: `article:${source}:`, limit: 1000 });
   const newest = listed.keys.sort((a, b) => (b.metadata?.published || 0) - (a.metadata?.published || 0)).slice(0, 20);
   const entries = (await Promise.all(newest.map(key => env.CONTENT.get(key.name, "json")))).filter(Boolean);
-  const items = entries.map(entry => `
-    <item>
-      <title>${escapeXml(entry.title)}</title>
-      <link>${escapeXml(entry.url)}</link>
-      <guid isPermaLink="false">fulltext:${source}:${entry.id}</guid>
-      <pubDate>${new Date(entry.published * 1000).toUTCString()}</pubDate>
-      <description>${escapeXml(entry.html)}</description>
-      <content:encoded>${escapeXml(entry.html)}</content:encoded>
-      ${entry.cover ? `<media:thumbnail url="${escapeXml(entry.cover)}"/>` : ""}
-    </item>`).join("");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/">
-  <channel>
-    <title>${escapeXml(SOURCES[source])}</title>
-    <link>${escapeXml(websiteUrl)}</link>
-    <description>保留配图和静态图表的全文阅读源</description>
-    <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml"/>
-    <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub"/>
-    ${items}
-  </channel>
-</rss>`;
+  const xml = renderRss(entries, {
+    source,
+    title: SOURCES[source],
+    websiteUrl,
+    feedUrl,
+    description: "保留配图和静态图表的全文阅读源"
+  });
   return new Response(xml, { headers: {
     "Content-Type": "application/rss+xml; charset=utf-8",
     "Cache-Control": "public, max-age=30",
@@ -94,6 +80,16 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/") {
         return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(feedPath) });
+      }
+      if (request.method === "GET" && url.pathname === KONG_ARCHIVE_PATH) {
+        const archive = await env.CONTENT.getWithMetadata(KONG_ARCHIVE_KEY, "arrayBuffer");
+        if (!archive.value) return new Response("Archive not published", { status: 404 });
+        return new Response(archive.value, { headers: {
+          "Content-Type": "application/rss+xml; charset=utf-8",
+          "Content-Encoding": "gzip",
+          "Cache-Control": "public, max-age=60",
+          "Access-Control-Allow-Origin": "*"
+        } });
       }
       const feedSlug = parts[1]?.replace(/\.xml$/, "");
       const feedSource = feedSlug === "kong-blog" ? "kong" : feedSlug;
@@ -129,6 +125,17 @@ export default {
       }
       if (!env.PUBLISH_SECRET || request.headers.get("Authorization") !== `Bearer ${env.PUBLISH_SECRET}`) {
         return json({ error: "Unauthorized" }, 401);
+      }
+      if (request.method === "PUT" && url.pathname === "/api/archives/kong-technical-history") {
+        const count = Number(request.headers.get("X-Article-Count"));
+        if (!Number.isInteger(count) || count < 1 || count > 5000) return json({ error: "Invalid article count" }, 400);
+        const body = await request.arrayBuffer();
+        const bytes = new Uint8Array(body);
+        if (bytes.length > 25 * 1024 * 1024 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) {
+          return json({ error: "Expected a gzip archive within the KV size limit" }, 400);
+        }
+        await env.CONTENT.put(KONG_ARCHIVE_KEY, body, { metadata: { count, publishedAt: Date.now() } });
+        return json({ count, bytes: body.byteLength, feed: url.origin + KONG_ARCHIVE_PATH }, 201);
       }
       if (request.method === "PUT" && parts[0] === "api" && parts[1] === "images") {
         const key = parts.slice(2).join("/");

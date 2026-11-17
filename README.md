@@ -34,6 +34,14 @@ Kong uses the article's `.toc-body` container, retaining the article text, code 
 
 Interactive figures become static snapshots. Figures that require unavailable client-side data retain a link to the original article. A changed website layout, unavailable upstream feed, or an expired GitHub trigger token can require maintenance. Failed captures are visible in GitHub Actions and can be rerun there. This deployment uses no AI model calls.
 
+## Kong technical history
+
+`npm run backfill:kong` builds a historical feed for Engineering, Educational and Learning Center. It discovers article URLs from Kong's official sitemap, keeps the original publication dates, and caches each completed article under `artifacts/kong-history-entries` so interrupted work can resume.
+
+With `WORKER_URL` and `PUBLISH_SECRET`, a successful complete run publishes `/rss/kong-technical-history.xml`. This historical feed is stored as one compressed RSS document in KV. A partial or failed run keeps its local results and report without replacing the published archive.
+
+`BACKFILL_LIMIT` can restrict a local validation run. Limited runs only write local artifacts.
+
 ## Local checks
 
 Run `npm test` to check payload validation, feed output, authentication and dispatch behavior.
