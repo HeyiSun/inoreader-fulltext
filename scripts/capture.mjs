@@ -121,6 +121,7 @@ async function loadFromFulltextFeed(page, article) {
         main ._0cz0VG_metrics dd{margin:0}
         main ._0cz0VG_metrics dd[hidden]{display:none!important}
         main ._6gQH-a_handle{display:flex!important}
+        main button,main input,main select,main nav{display:none!important}
       </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`, {waitUntil:"domcontentloaded"});
       await page.evaluate(async () => {
         for (const handle of document.querySelectorAll("._6gQH-a_handle")) {
@@ -199,7 +200,7 @@ async function capture(article, browser) {
       const figure = figures.nth(i);
       const nested = await figure.evaluate(el => Boolean(el.parentElement.closest("figure")));
       if (nested) continue;
-      const drawable = await figure.evaluate(el => Boolean(el.querySelector("svg,canvas")));
+      const drawable = await figure.evaluate(el => Boolean(el.querySelector('svg,canvas,[role="img"],[role="group"]')));
       if (!drawable) continue;
       await figure.scrollIntoViewIfNeeded();
       const buffer = await figure.screenshot({ animations: "disabled", timeout: 15000 });
