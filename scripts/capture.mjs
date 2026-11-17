@@ -105,6 +105,7 @@ async function loadFromFulltextFeed(page, article) {
       <style>
         :root{--color-text:#202020;--color-border:#ccc;--color-background:#fff;--color-primary:#202020;--color-primary-100:#202020;--color-primary-80:#555;--color-primary-60:#777;--color-primary-44:#999;--color-primary-12:#ddd;--color-primary-04:#fafafa;--color-brand:#9b76de;--color-token-text-primary:#202020;--color-token-border-light:#ddd;--color-token-bg-primary:#fff;--font-sans:Arial;--font-mono:monospace;--type-h4-size:20px;--type-h4-line:1.4;--type-p2-size:14px;--chart-color-purple-2:#8b5fce;--chart-color-orange-2:#db975b;--chart-color-blue-1:#d9e5f9;--chart-color-blue-2:#698aca;--tw-border-style:solid}
         *{box-sizing:border-box}body{font:18px/1.65 Arial,sans-serif;color:#202020;background:#fff;margin:0;padding:36px}
+        .hidden,[hidden]{display:none!important}.invisible{visibility:hidden}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
         main{max-width:1100px;margin:auto}h1,h2,h3,h4{line-height:1.3}p{margin:1em 0}figure{margin:32px 0;padding:20px;border:1px solid #eee;background:#fff}
         img{max-width:100%;height:auto;display:block;margin:16px auto}svg{max-width:100%}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
         svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
@@ -143,7 +144,7 @@ async function loadFromFulltextFeed(page, article) {
           new Promise(resolve => setTimeout(resolve, 8000))
         ]);
       });
-      return { selector: "main", feedUrl };
+      return { selector: "main", feedUrl, published: Date.parse(match.pubDate) / 1000 };
     } catch (error) {
       console.log(`Full-text source unavailable: ${new URL(feedUrl).hostname} (${error.message})`);
     }
@@ -156,7 +157,18 @@ async function capture(article, browser) {
   const itemPath = `/api/articles/${article.source}?url=${encodeURIComponent(article.url)}`;
   if (workerUrl && publishSecret && !article.force) {
     const existing = await api(itemPath);
-    if (existing.ok) return { id, url: article.url, source: article.source, cached: true };
+    if (existing.ok) {
+      const entry = await existing.json();
+      if (article.published && article.published !== entry.published) {
+        const updated = await api(itemPath, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...entry, published: article.published })
+        });
+        if (!updated.ok) throw new Error(`Article metadata publishing failed (${updated.status})`);
+      }
+      return { id, url: article.url, source: article.source, cached: true };
+    }
     if (existing.status !== 404) throw new Error(`Cannot check existing article (${existing.status})`);
   }
 
@@ -169,12 +181,14 @@ async function capture(article, browser) {
   try {
     let selector;
     let fallbackSource;
+    let fallbackPublished;
     try {
       selector = await loadArticle(page, article.url);
     } catch {
       const fallback = await loadFromFulltextFeed(page, article);
       selector = fallback.selector;
       fallbackSource = fallback.feedUrl;
+      fallbackPublished = fallback.published;
     }
     const title = await page.locator("h1").first().innerText();
     const cover = await page.locator('meta[property="og:image"]').getAttribute("content").catch(() => null);
@@ -276,7 +290,7 @@ async function capture(article, browser) {
       title: title || article.title,
       html: `<p><a href="${article.url}">原文</a></p>${cleaned}`,
       cover: snapshots[0]?.url || cover || "",
-      published: article.published || Math.floor(Date.now() / 1000)
+      published: article.published || fallbackPublished || Math.floor(Date.now() / 1000)
     };
     if (workerUrl && publishSecret) {
       const response = await api(itemPath, {
