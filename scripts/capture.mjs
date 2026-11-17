@@ -60,8 +60,11 @@ async function loadArticle(page, url) {
       await new Promise(resolve => setTimeout(resolve, 120));
     }
     for (const image of article.querySelectorAll("img")) image.loading = "eager";
-    await Promise.all(Array.from(article.querySelectorAll("img")).map(image => image.decode().catch(() => {})));
-    await document.fonts.ready;
+    await Promise.race([
+      Promise.all(Array.from(article.querySelectorAll("img")).map(image => image.decode().catch(() => {}))),
+      new Promise(resolve => setTimeout(resolve, 8000))
+    ]);
+    await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 3000))]);
   }, selector);
   return selector;
 }
@@ -100,9 +103,12 @@ async function loadFromFulltextFeed(page, article) {
         main{max-width:1100px;margin:auto}h1,h2,h3,h4{line-height:1.3}p{margin:1em 0}figure{margin:32px 0;padding:20px;border:1px solid #eee;background:#fff}
         img,svg{max-width:100%;height:auto}img{display:block;margin:16px auto}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
         svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
-      </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`);
+      </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`, {waitUntil:"domcontentloaded"});
       await page.evaluate(async () => {
-        await Promise.all(Array.from(document.querySelectorAll("img")).map(image => image.decode().catch(() => {})));
+        await Promise.race([
+          Promise.all(Array.from(document.querySelectorAll("img")).map(image => image.decode().catch(() => {}))),
+          new Promise(resolve => setTimeout(resolve, 8000))
+        ]);
       });
       return { selector: "main", feedUrl };
     } catch (error) {
@@ -146,7 +152,7 @@ async function capture(article, browser) {
       const figure = figures.nth(i);
       const nested = await figure.evaluate(el => Boolean(el.parentElement.closest("figure")));
       if (nested) continue;
-      const drawable = await figure.evaluate(el => Boolean(el.querySelector("img,svg,canvas")));
+      const drawable = await figure.evaluate(el => Boolean(el.querySelector("svg,canvas")));
       if (!drawable) continue;
       await figure.scrollIntoViewIfNeeded();
       const buffer = await figure.screenshot({ animations: "disabled", timeout: 15000 });
