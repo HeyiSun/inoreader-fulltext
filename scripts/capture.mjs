@@ -252,7 +252,7 @@ async function capture(article, browser) {
           figure.replaceWith(link);
         }
       }
-      for (const element of root.querySelectorAll("nav,script,style,button,form,select,input,iframe,footer,[aria-hidden=true]")) element.remove();
+      for (const element of root.querySelectorAll("nav,script,style,button,form,select,input,iframe,footer,[aria-hidden=true],pre .linenumber,pre .react-syntax-highlighter-line-number")) element.remove();
       for (const heading of root.querySelectorAll("h1,h2,h3")) {
         if (heading.textContent.trim() === "Keep reading") {
           let section = heading;
