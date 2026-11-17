@@ -30,13 +30,14 @@ test("Kong articles retain their source and published time", () => {
 });
 
 test("Kong feed points to the publisher website", async () => {
-  const response = await worker.fetch(new Request("https://worker.test/rss/kong.xml"), {
+  const response = await worker.fetch(new Request("https://worker.test/rss/kong-blog.xml"), {
     CONTENT: { list: async () => ({ keys: [] }) }
   });
   const xml = await response.text();
   assert.equal(response.status, 200);
   assert.match(xml, /Kong Blog 全文/);
   assert.match(xml, /<link>https:\/\/konghq.com\/blog<\/link>/);
+  assert.match(xml, /https:\/\/worker.test\/rss\/kong-blog.xml/);
 });
 
 test("public feed requests work without publishing credentials", async () => {

@@ -22,7 +22,7 @@ The workflow is event-triggered and can also be run manually from GitHub Actions
 - [OpenAI Engineering](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-engineering.xml)
 - [OpenAI Research](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-research.xml)
 - [OpenAI Developer Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-developer.xml)
-- [Kong Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/kong.xml)
+- [Kong Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/kong-blog.xml)
 
 The original Inoreader subscriptions trigger capture jobs. Read the generated subscriptions for the extracted content. Each output feed contains the latest 20 captured articles. Successful publications notify a WebSub hub, while delivery timing also depends on Inoreader's feed refresh.
 

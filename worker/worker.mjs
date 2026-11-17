@@ -48,9 +48,13 @@ function json(data, status = 200) {
   return Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+function feedPath(source) {
+  return `/rss/${source === "kong" ? "kong-blog" : source}.xml`;
+}
+
 async function renderFeed(request, env, source) {
   const base = new URL(request.url).origin;
-  const feedUrl = base + `/rss/${source}.xml`;
+  const feedUrl = base + feedPath(source);
   const websiteUrl = source === "kong" ? "https://konghq.com/blog" : "https://openai.com/news/";
   const listed = await env.CONTENT.list({ prefix: `article:${source}:`, limit: 1000 });
   const newest = listed.keys.sort((a, b) => (b.metadata?.published || 0) - (a.metadata?.published || 0)).slice(0, 20);
@@ -89,10 +93,12 @@ export default {
     const parts = url.pathname.split("/").filter(Boolean);
     try {
       if (request.method === "GET" && url.pathname === "/") {
-        return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(source => `/rss/${source}.xml`) });
+        return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(feedPath) });
       }
-      if (request.method === "GET" && ["rss", "feeds"].includes(parts[0]) && SOURCES[parts[1]?.replace(/\.xml$/, "")]) {
-        return renderFeed(request, env, parts[1].replace(/\.xml$/, ""));
+      const feedSlug = parts[1]?.replace(/\.xml$/, "");
+      const feedSource = feedSlug === "kong-blog" ? "kong" : feedSlug;
+      if (request.method === "GET" && ["rss", "feeds"].includes(parts[0]) && SOURCES[feedSource]) {
+        return renderFeed(request, env, feedSource);
       }
       if (request.method === "GET" && parts[0] === "images") {
         const image = await env.CONTENT.getWithMetadata(`image:${parts.slice(1).join("/")}`, "arrayBuffer");
@@ -147,7 +153,7 @@ export default {
           if (typeof article.html !== "string" || article.html.length > 1500000) return json({ error: "Invalid article HTML" }, 400);
           const entry = { ...normalized, id, html: article.html, cover: article.cover || "", capturedAt: Date.now() };
           await env.CONTENT.put(key, JSON.stringify(entry), { metadata: { published: entry.published } });
-          return json({ id, feed: `${url.origin}/rss/${source}.xml` }, 201);
+          return json({ id, feed: url.origin + feedPath(source) }, 201);
         }
       }
       return json({ error: "Not found" }, 404);

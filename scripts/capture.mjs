@@ -350,7 +350,7 @@ try {
 await writeFile(`${outputDirectory}/report.json`, JSON.stringify(report, null, 2));
 if (workerUrl && publishSecret) {
   for (const source of new Set(report.filter(item => !item.error && !item.cached).map(item => item.source))) {
-    const feedUrl = `${workerUrl}/rss/${source}.xml`;
+    const feedUrl = `${workerUrl}/rss/${source === "kong" ? "kong-blog" : source}.xml`;
     const hubResponse = await fetch("https://pubsubhubbub.appspot.com/", {
       method: "POST",
       body: new URLSearchParams({ "hub.mode": "publish", "hub.url": feedUrl }),
