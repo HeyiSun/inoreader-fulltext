@@ -84,7 +84,7 @@ export default {
       if (request.method === "GET" && url.pathname === KONG_ARCHIVE_PATH) {
         const archive = await env.CONTENT.getWithMetadata(KONG_ARCHIVE_KEY, "arrayBuffer");
         if (!archive.value) return new Response("Archive not published", { status: 404 });
-        return new Response(archive.value, { headers: {
+        return new Response(archive.value, { encodeBody: "manual", headers: {
           "Content-Type": "application/rss+xml; charset=utf-8",
           "Content-Encoding": "gzip",
           "Cache-Control": "public, max-age=60",
