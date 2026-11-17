@@ -19,7 +19,7 @@ test("disabled websites are rejected", () => {
 });
 
 test("public feed requests work without publishing credentials", async () => {
-  const response = await worker.fetch(new Request("https://worker.test/feeds/openai-engineering.xml"), {
+  const response = await worker.fetch(new Request("https://worker.test/rss/openai-engineering.xml"), {
     CONTENT: { list: async () => ({ keys: [] }) }
   });
   assert.equal(response.status, 200);

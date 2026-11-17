@@ -48,6 +48,7 @@ function json(data, status = 200) {
 
 async function renderFeed(request, env, source) {
   const base = new URL(request.url).origin;
+  const feedUrl = base + `/rss/${source}.xml`;
   const listed = await env.CONTENT.list({ prefix: `article:${source}:`, limit: 1000 });
   const newest = listed.keys.sort((a, b) => (b.metadata?.published || 0) - (a.metadata?.published || 0)).slice(0, 20);
   const entries = (await Promise.all(newest.map(key => env.CONTENT.get(key.name, "json")))).filter(Boolean);
@@ -67,7 +68,7 @@ async function renderFeed(request, env, source) {
     <title>${escapeXml(SOURCES[source])}</title>
     <link>https://openai.com/news/</link>
     <description>保留配图和静态图表的全文阅读源</description>
-    <atom:link href="${escapeXml(base + `/feeds/${source}.xml`)}" rel="self" type="application/rss+xml"/>
+    <atom:link href="${escapeXml(feedUrl)}" rel="self" type="application/rss+xml"/>
     <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub"/>
     ${items}
   </channel>
@@ -85,9 +86,9 @@ export default {
     const parts = url.pathname.split("/").filter(Boolean);
     try {
       if (request.method === "GET" && url.pathname === "/") {
-        return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(source => `/feeds/${source}.xml`) });
+        return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(source => `/rss/${source}.xml`) });
       }
-      if (request.method === "GET" && parts[0] === "feeds" && SOURCES[parts[1]?.replace(/\.xml$/, "")]) {
+      if (request.method === "GET" && ["rss", "feeds"].includes(parts[0]) && SOURCES[parts[1]?.replace(/\.xml$/, "")]) {
         return renderFeed(request, env, parts[1].replace(/\.xml$/, ""));
       }
       if (request.method === "GET" && parts[0] === "images") {
@@ -143,7 +144,7 @@ export default {
           if (typeof article.html !== "string" || article.html.length > 1500000) return json({ error: "Invalid article HTML" }, 400);
           const entry = { ...normalized, id, html: article.html, cover: article.cover || "", capturedAt: Date.now() };
           await env.CONTENT.put(key, JSON.stringify(entry), { metadata: { published: entry.published } });
-          return json({ id, feed: `${url.origin}/feeds/${source}.xml` }, 201);
+          return json({ id, feed: `${url.origin}/rss/${source}.xml` }, 201);
         }
       }
       return json({ error: "Not found" }, 404);

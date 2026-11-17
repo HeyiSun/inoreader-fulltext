@@ -13,15 +13,15 @@ This project uses Cloudflare's free Workers and KV allowances and standard GitHu
 5. Set the repository variable `WORKER_URL` and secret `PUBLISH_SECRET`.
 6. Give the Worker's fine-grained GitHub token access to this repository with Actions write permission.
 7. Configure Inoreader rules to POST new OpenAI articles to `/hooks/<HOOK_SECRET>`.
-8. Subscribe to `/feeds/openai-engineering.xml`, `/feeds/openai-research.xml`, or `/feeds/openai-developer.xml`.
+8. Subscribe to `/rss/openai-engineering.xml`, `/rss/openai-research.xml`, or `/rss/openai-developer.xml`.
 
 The workflow is event-triggered and can also be run manually from GitHub Actions. It has no periodic polling schedule. Existing article URLs are cached. A manual input can include `force: true` to recapture an article.
 
 ## Live feeds
 
-- [OpenAI Engineering](https://inoreader-fulltext.inoreader-fulltext.workers.dev/feeds/openai-engineering.xml)
-- [OpenAI Research](https://inoreader-fulltext.inoreader-fulltext.workers.dev/feeds/openai-research.xml)
-- [OpenAI Developer Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/feeds/openai-developer.xml)
+- [OpenAI Engineering](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-engineering.xml)
+- [OpenAI Research](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-research.xml)
+- [OpenAI Developer Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-developer.xml)
 
 The original Inoreader subscriptions trigger capture jobs. Read the generated subscriptions for the extracted content. Each output feed contains the latest 20 captured articles. Successful publications notify a WebSub hub, while delivery timing also depends on Inoreader's feed refresh.
 
