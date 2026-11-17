@@ -204,7 +204,9 @@ async function capture(article, browser) {
       if (!drawable) continue;
       await figure.evaluate(el => {
         const widths = Array.from(el.querySelectorAll("*")).filter(node => node.getBoundingClientRect().width > 0).map(node => node.scrollWidth);
-        const width = Math.min(2000, Math.max(el.clientWidth, ...widths));
+        const style = getComputedStyle(el);
+        const inset = [style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth].reduce((total, value) => total + parseFloat(value), 0);
+        const width = Math.min(2000, Math.max(el.clientWidth, ...widths) + inset);
         el.style.maxWidth = "none";
         el.style.width = `${width}px`;
       });
