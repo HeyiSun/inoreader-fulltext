@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { chromium } from "playwright";
 import sanitizeHtml from "sanitize-html";
@@ -11,6 +11,7 @@ const publishSecret = process.env.PUBLISH_SECRET;
 const allowedHosts = new Set(["openai.com", "www.openai.com", "developers.openai.com"]);
 const articles = JSON.parse(process.env.ARTICLE_INPUT || "[]");
 const feedCache = new Map();
+const fallbackFigureCss = await readFile(new URL("./openai-figures.css", import.meta.url), "utf8");
 
 if (!Array.isArray(articles) || !articles.length || articles.length > 20) {
   throw new Error("ARTICLE_INPUT must contain 1–20 articles");
@@ -36,8 +37,9 @@ async function api(path, options = {}) {
 }
 
 async function publishImage(buffer, articleId, index) {
-  const name = `${articleId}/${index}.png`;
   const png = await sharp(buffer).resize({ width: 1800, withoutEnlargement: true }).png().toBuffer();
+  const imageHash = createHash("sha256").update(png).digest("hex").slice(0, 12);
+  const name = `${articleId}/${index}-${imageHash}.png`;
   await writeFile(`${outputDirectory}/${articleId}-${index}.png`, png);
   if (!workerUrl || !publishSecret) return `${articleId}-${index}.png`;
   const response = await api(`/api/images/${name}`, {
@@ -89,7 +91,7 @@ async function loadFromFulltextFeed(page, article) {
       if (typeof body !== "string" || body.length < 1000) continue;
       const safe = sanitizeHtml(body, {
         allowedTags: sanitizeHtml.defaults.allowedTags.concat([
-          "img", "figure", "figcaption", "svg", "g", "path", "rect", "circle", "line", "polyline", "polygon", "text", "tspan", "defs", "clipPath", "marker"
+          "img", "figure", "figcaption", "svg", "g", "path", "rect", "circle", "line", "polyline", "polygon", "text", "tspan", "defs", "clipPath", "marker", "pattern"
         ]),
         allowedAttributes: { "*": ["*"] },
         parser: { lowerCaseAttributeNames: false, lowerCaseTags: false },
@@ -98,13 +100,24 @@ async function loadFromFulltextFeed(page, article) {
       });
       await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><base href="${article.url}">
       <style>
-        :root{--color-text:#202020;--color-border:#ccc;--color-background:#fff;--color-primary:#202020;--color-brand:#9b76de;--color-token-text-primary:#202020;--color-token-border-light:#ddd;--color-token-bg-primary:#fff}
+        :root{--color-text:#202020;--color-border:#ccc;--color-background:#fff;--color-primary:#202020;--color-primary-100:#202020;--color-primary-80:#555;--color-primary-60:#777;--color-primary-44:#999;--color-primary-12:#ddd;--color-primary-04:#fafafa;--color-brand:#9b76de;--color-token-text-primary:#202020;--color-token-border-light:#ddd;--color-token-bg-primary:#fff;--font-sans:Arial;--font-mono:monospace;--type-h4-size:20px;--type-h4-line:1.4;--type-p2-size:14px;--chart-color-purple-2:#8b5fce;--chart-color-orange-2:#db975b;--chart-color-blue-1:#d9e5f9;--chart-color-blue-2:#698aca;--tw-border-style:solid}
         *{box-sizing:border-box}body{font:18px/1.65 Arial,sans-serif;color:#202020;background:#fff;margin:0;padding:36px}
         main{max-width:1100px;margin:auto}h1,h2,h3,h4{line-height:1.3}p{margin:1em 0}figure{margin:32px 0;padding:20px;border:1px solid #eee;background:#fff}
-        img,svg{max-width:100%;height:auto}img{display:block;margin:16px auto}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
+        img{max-width:100%;height:auto;display:block;margin:16px auto}svg{max-width:100%}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
         svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
+        ${fallbackFigureCss}
       </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`, {waitUntil:"domcontentloaded"});
       await page.evaluate(async () => {
+        for (const svg of document.querySelectorAll("svg[viewBox]")) {
+          const box = svg.viewBox.baseVal;
+          if (box.width > 100 && box.height > 40) {
+            svg.style.width = "100%";
+            svg.style.height = "auto";
+          } else {
+            svg.style.width = "16px";
+            svg.style.height = "16px";
+          }
+        }
         await Promise.race([
           Promise.all(Array.from(document.querySelectorAll("img")).map(image => image.decode().catch(() => {}))),
           new Promise(resolve => setTimeout(resolve, 8000))
