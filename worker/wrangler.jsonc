@@ -9,5 +9,10 @@
     "GITHUB_WORKFLOW": "fulltext.yml",
     "GITHUB_REF": "main"
   },
-  "kv_namespaces": []
+  "kv_namespaces": [
+    {
+      "binding": "CONTENT",
+      "id": "1e7622663f08496fa5fa4117ba5d361f"
+    }
+  ]
 }

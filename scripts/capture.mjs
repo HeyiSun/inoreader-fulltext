@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { chromium } from "playwright";
 import sanitizeHtml from "sanitize-html";
 import sharp from "sharp";
+import { XMLParser } from "fast-xml-parser";
 
 const outputDirectory = "artifacts";
 const workerUrl = process.env.WORKER_URL?.replace(/\/$/, "");
 const publishSecret = process.env.PUBLISH_SECRET;
 const allowedHosts = new Set(["openai.com", "www.openai.com", "developers.openai.com"]);
 const articles = JSON.parse(process.env.ARTICLE_INPUT || "[]");
+const feedCache = new Map();
 
 if (!Array.isArray(articles) || !articles.length || articles.length > 20) {
   throw new Error("ARTICLE_INPUT must contain 1–20 articles");
@@ -50,7 +52,7 @@ async function publishImage(buffer, articleId, index) {
 async function loadArticle(page, url) {
   const selector = new URL(url).hostname === "developers.openai.com" ? "main" : "#main article";
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.locator(selector).waitFor({ state: "visible", timeout: 30000 });
+  await page.locator(selector).waitFor({ state: "visible", timeout: 10000 });
   await page.evaluate(async selector => {
     const article = document.querySelector(selector);
     for (const figure of article.querySelectorAll("figure")) {
@@ -62,6 +64,52 @@ async function loadArticle(page, url) {
     await document.fonts.ready;
   }, selector);
   return selector;
+}
+
+async function loadFromFulltextFeed(page, article) {
+  const routes = article.source === "openai-research"
+    ? ["https://rsshub.rss3.workers.dev/openai/research?limit=40", "https://rsshub.rssforever.com/openai/news?limit=100"]
+    : ["https://rsshub.rssforever.com/openai/news?limit=100", "https://rsshub.rssforever.com/openai/news?limit=50"];
+  const normalizedUrl = article.url.replace(/\/$/, "");
+  for (const feedUrl of routes) {
+    try {
+      if (!feedCache.has(feedUrl)) {
+        const response = await fetch(feedUrl, { signal: AbortSignal.timeout(55000) });
+        if (!response.ok) throw new Error(`RSS returned ${response.status}`);
+        const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false });
+        const parsed = parser.parse(await response.text());
+        const entries = parsed.rss?.channel?.item;
+        feedCache.set(feedUrl, Array.isArray(entries) ? entries : entries ? [entries] : []);
+      }
+      const match = feedCache.get(feedUrl).find(item => String(item.link).replace(/\/$/, "") === normalizedUrl);
+      const body = match?.["content:encoded"] || match?.description;
+      if (typeof body !== "string" || body.length < 1000) continue;
+      const safe = sanitizeHtml(body, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img", "figure", "figcaption", "svg", "g", "path", "rect", "circle", "line", "polyline", "polygon", "text", "tspan", "defs", "clipPath", "marker"
+        ]),
+        allowedAttributes: { "*": ["*"] },
+        parser: { lowerCaseAttributeNames: false, lowerCaseTags: false },
+        allowedSchemes: ["http", "https", "data"],
+        allowVulnerableTags: false
+      });
+      await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><base href="${article.url}">
+      <style>
+        :root{--color-text:#202020;--color-border:#ccc;--color-background:#fff;--color-primary:#202020;--color-brand:#9b76de;--color-token-text-primary:#202020;--color-token-border-light:#ddd;--color-token-bg-primary:#fff}
+        *{box-sizing:border-box}body{font:18px/1.65 Arial,sans-serif;color:#202020;background:#fff;margin:0;padding:36px}
+        main{max-width:1100px;margin:auto}h1,h2,h3,h4{line-height:1.3}p{margin:1em 0}figure{margin:32px 0;padding:20px;border:1px solid #eee;background:#fff}
+        img,svg{max-width:100%;height:auto}img{display:block;margin:16px auto}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
+        svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
+      </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`);
+      await page.evaluate(async () => {
+        await Promise.all(Array.from(document.querySelectorAll("img")).map(image => image.decode().catch(() => {})));
+      });
+      return { selector: "main", feedUrl };
+    } catch (error) {
+      console.log(`Full-text source unavailable: ${new URL(feedUrl).hostname} (${error.message})`);
+    }
+  }
+  throw new Error("Original page and full-text sources are unavailable");
 }
 
 async function capture(article, browser) {
@@ -80,7 +128,15 @@ async function capture(article, browser) {
   });
   const page = await context.newPage();
   try {
-    const selector = await loadArticle(page, article.url);
+    let selector;
+    let fallbackSource;
+    try {
+      selector = await loadArticle(page, article.url);
+    } catch {
+      const fallback = await loadFromFulltextFeed(page, article);
+      selector = fallback.selector;
+      fallbackSource = fallback.feedUrl;
+    }
     const title = await page.locator("h1").first().innerText();
     const cover = await page.locator('meta[property="og:image"]').getAttribute("content").catch(() => null);
     const figures = page.locator(`${selector} figure`);
@@ -90,6 +146,8 @@ async function capture(article, browser) {
       const figure = figures.nth(i);
       const nested = await figure.evaluate(el => Boolean(el.parentElement.closest("figure")));
       if (nested) continue;
+      const drawable = await figure.evaluate(el => Boolean(el.querySelector("img,svg,canvas")));
+      if (!drawable) continue;
       await figure.scrollIntoViewIfNeeded();
       const buffer = await figure.screenshot({ animations: "disabled", timeout: 15000 });
       const url = await publishImage(buffer, id, snapshots.length);
@@ -119,6 +177,14 @@ async function capture(article, browser) {
         target.replaceWith(replacement);
       }
 
+      for (const figure of root.querySelectorAll("figure")) {
+        if (!figure.querySelector("img,svg,canvas") && !figure.textContent.trim()) {
+          const link = document.createElement("a");
+          link.href = articleUrl;
+          link.textContent = "此处为原网页动态图表，点击查看";
+          figure.replaceWith(link);
+        }
+      }
       for (const element of root.querySelectorAll("nav,script,style,button,form,select,input,iframe,footer,[aria-hidden=true]")) element.remove();
       for (const heading of root.querySelectorAll("h1,h2,h3")) {
         if (heading.textContent.trim() === "Keep reading") {
@@ -181,7 +247,7 @@ async function capture(article, browser) {
       });
       if (!response.ok) throw new Error(`Article publishing failed (${response.status})`);
     }
-    return { id, title: entry.title, url: article.url, source: article.source, imageCount, textLength, staticSnapshots: snapshots.length };
+    return { id, title: entry.title, url: article.url, source: article.source, imageCount, textLength, staticSnapshots: snapshots.length, fallbackSource };
   } catch (error) {
     await page.screenshot({ path: `${outputDirectory}/${id}-error.png`, fullPage: false }).catch(() => {});
     throw error;
