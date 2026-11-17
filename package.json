@@ -1,0 +1,19 @@
+{
+  "name": "inoreader-fulltext",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node scripts/capture.mjs",
+    "test": "node --test worker/worker.test.mjs"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.12.1",
+    "playwright": "1.65.1",
+    "sanitize-html": "2.18.2",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "wrangler": "4.163.0"
+  }
+}
