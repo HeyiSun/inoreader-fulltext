@@ -4,14 +4,15 @@ import { gzipSync } from "node:zlib";
 import { parseHTML } from "linkedom";
 import { XMLParser } from "fast-xml-parser";
 import { extractArticleHtml, sanitizeArticleHtml } from "./article-content.mjs";
-import { escapeXml, renderRss } from "../lib/rss.mjs";
+import { escapeXml } from "../lib/rss.mjs";
+import { KONG_CATEGORIES } from "../lib/kong-categories.mjs";
+import { renderKongFeed, publishKongFeed } from "../lib/kong.mjs";
 
-const categories = new Set(["engineering", "educational", "learning-center"]);
+const categories = new Set(Object.keys(KONG_CATEGORIES));
 const outputDirectory = "artifacts/kong-history-entries";
 const workerUrl = process.env.WORKER_URL?.replace(/\/$/, "");
 const publishSecret = process.env.PUBLISH_SECRET;
 const limit = Number(process.env.BACKFILL_LIMIT || 0);
-const categoryNames = { engineering: "Engineering", educational: "Educational", "learning-center": "Learning Center" };
 
 function articleId(url) {
   return createHash("sha256").update(url.replace(/\/$/, "")).digest("hex").slice(0, 24);
@@ -72,7 +73,7 @@ async function readArticle(inputUrl) {
     title: page.title,
     published,
     category,
-    tags: [categoryNames[category], ...(page.tags || []).map(tag => tag.title)],
+    tags: [KONG_CATEGORIES[category], ...(page.tags || []).map(tag => tag.title)],
     cover: document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "",
     html: `<p><a href="${escapeXml(url.href)}">原文</a></p>${html}`,
     images: (html.match(/<img\b/g) || []).length,
@@ -115,16 +116,10 @@ async function worker() {
 await Promise.all(Array.from({ length: 4 }, worker));
 const unique = [...new Map(entries.map(entry => [entry.id, entry])).values()].sort((a, b) => b.published - a.published);
 const base = workerUrl || "https://inoreader-fulltext.inoreader-fulltext.workers.dev";
-const feedUrl = `${base}/rss/kong-technical-history.xml`;
-const xml = renderRss(unique, {
-  source: "kong",
-  title: "Kong 技术历史全文",
-  websiteUrl: "https://konghq.com/blog",
-  feedUrl,
-  description: "Engineering、Educational、Learning Center 历史全文"
-});
+const feedUrl = `${base}/rss/kong-blog.xml`;
+const xml = renderKongFeed(unique, base);
 const compressed = gzipSync(xml, { level: 9 });
-await writeFile("artifacts/kong-technical-history.xml.gz", compressed);
+await writeFile("artifacts/kong-blog.xml.gz", compressed);
 const report = {
   discovered: allUrls.length,
   processed: urls.length,
@@ -146,12 +141,5 @@ console.log(JSON.stringify(report));
 
 if (failures.length) throw new Error(`${failures.length} articles need another attempt; completed articles are cached locally`);
 if (workerUrl && publishSecret && !limit) {
-  const response = await fetch(`${workerUrl}/api/archives/kong-technical-history`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${publishSecret}`, "Content-Type": "application/gzip", "X-Article-Count": String(unique.length) },
-    body: compressed,
-    signal: AbortSignal.timeout(60000)
-  });
-  if (!response.ok) throw new Error(`Archive publishing failed: HTTP ${response.status}`);
-  console.log(JSON.stringify(await response.json()));
+  console.log(JSON.stringify(await publishKongFeed(unique, workerUrl, publishSecret)));
 }

@@ -32,7 +32,7 @@ test("Kong articles retain their source and published time", () => {
 
 test("Kong feed points to the publisher website", async () => {
   const response = await worker.fetch(new Request("https://worker.test/rss/kong-blog.xml"), {
-    CONTENT: { list: async () => ({ keys: [] }) }
+    CONTENT: { list: async () => ({ keys: [] }), getWithMetadata: async () => ({ value: null }) }
   });
   const xml = await response.text();
   assert.equal(response.status, 200);
@@ -56,7 +56,7 @@ test("publishing requires authorization", async () => {
   assert.equal(response.status, 401);
 });
 
-test("historical RSS archives are published privately and served as gzip", async () => {
+test("the combined Kong feed is published privately and served as gzip", async () => {
   const xml = '<rss version="2.0"><channel><title>Kong history</title></channel></rss>';
   let stored;
   const env = {
@@ -66,15 +66,24 @@ test("historical RSS archives are published privately and served as gzip", async
       getWithMetadata: async key => key === stored.key ? stored : { value: null }
     }
   };
-  const published = await worker.fetch(new Request("https://worker.test/api/archives/kong-technical-history", {
+  const published = await worker.fetch(new Request("https://worker.test/api/archives/kong", {
     method: "PUT",
     headers: { Authorization: "Bearer test-secret", "X-Article-Count": "384" },
     body: gzipSync(xml)
   }), env);
   assert.equal(published.status, 201);
   assert.equal(stored.metadata.count, 384);
-  const response = await worker.fetch(new Request("https://worker.test/rss/kong-technical-history.xml"), env);
+  const response = await worker.fetch(new Request("https://worker.test/rss/kong-blog.xml"), env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Encoding"), "gzip");
   assert.equal(gunzipSync(Buffer.from(await response.arrayBuffer())).toString(), xml);
+});
+
+test("unselected Kong categories do not start a capture job", async () => {
+  const response = await worker.fetch(new Request("https://worker.test/hooks/test-hook", {
+    method: "POST",
+    body: JSON.stringify({ items: [{ url: "https://konghq.com/blog/product-releases/example" }] })
+  }), { HOOK_SECRET: "test-hook" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { accepted: 0 });
 });

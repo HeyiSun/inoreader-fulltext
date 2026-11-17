@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fulltext-publish
+  cancel-in-progress: false
+  queue: max
+
 jobs:
   capture:
     runs-on: ubuntu-latest

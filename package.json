@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "capture": "node scripts/capture.mjs",
-    "test": "node --test worker/worker.test.mjs scripts/article-content.test.mjs",
+    "test": "node --test worker/worker.test.mjs scripts/article-content.test.mjs lib/kong.test.mjs",
     "backfill:kong": "node scripts/backfill-kong.mjs"
   },
   "dependencies": {

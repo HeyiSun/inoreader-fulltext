@@ -5,6 +5,8 @@ import sanitizeHtml from "sanitize-html";
 import sharp from "sharp";
 import { XMLParser } from "fast-xml-parser";
 import { extractArticleHtml, sanitizeArticleHtml } from "./article-content.mjs";
+import { KONG_CATEGORIES, isKongTechnicalArticle } from "../lib/kong-categories.mjs";
+import { mergeKongEntries, readKongFeed, publishKongFeed } from "../lib/kong.mjs";
 
 const outputDirectory = "artifacts";
 const workerUrl = process.env.WORKER_URL?.replace(/\/$/, "");
@@ -160,6 +162,9 @@ async function loadFromFulltextFeed(page, article) {
 }
 
 async function capture(article, browser) {
+  if (article.source === "kong" && !isKongTechnicalArticle(article.url)) {
+    return { url: article.url, source: article.source, filtered: true };
+  }
   const id = createHash("sha256").update(article.url.replace(/\/$/, "")).digest("hex").slice(0, 24);
   const itemPath = `/api/articles/${article.source}?url=${encodeURIComponent(article.url)}`;
   if (workerUrl && publishSecret && !article.force) {
@@ -198,6 +203,10 @@ async function capture(article, browser) {
       fallbackPublished = fallback.published;
     }
     const title = await page.locator("h1").first().innerText();
+    const kongMetadata = article.source === "kong" ? await page.evaluate(() => {
+      const data = document.querySelector('script[id="__NEXT_DATA__"]');
+      return data ? JSON.parse(data.textContent).props?.pageProps?.page : null;
+    }) : null;
     const cover = await page.locator('meta[property="og:image"]').getAttribute("content").catch(() => null);
     const figures = page.locator(`${selector} figure`);
     const count = await figures.count();
@@ -235,7 +244,9 @@ async function capture(article, browser) {
       title: title || article.title,
       html: `<p><a href="${article.url}">原文</a></p>${cleaned}`,
       cover: snapshots[0]?.url || cover || "",
-      published: article.published || fallbackPublished || Math.floor(Date.now() / 1000)
+      published: (kongMetadata?.publishedAt && Math.floor(Date.parse(kongMetadata.publishedAt) / 1000))
+        || article.published || fallbackPublished || Math.floor(Date.now() / 1000),
+      tags: kongMetadata ? [KONG_CATEGORIES[kongMetadata.categories?.slug], ...(kongMetadata.tags || []).map(tag => tag.title)].filter(Boolean) : []
     };
     if (workerUrl && publishSecret) {
       const response = await api(itemPath, {
@@ -277,7 +288,20 @@ try {
 
 await writeFile(`${outputDirectory}/report.json`, JSON.stringify(report, null, 2));
 if (workerUrl && publishSecret) {
-  for (const source of new Set(report.filter(item => !item.error && !item.cached).map(item => item.source))) {
+  const kongResults = report.filter(item => item.source === "kong" && !item.error && !item.filtered);
+  if (kongResults.length) {
+    const response = await api("/rss/kong-blog.xml");
+    if (!response.ok) throw new Error(`Cannot read the existing Kong feed (${response.status})`);
+    const existing = readKongFeed(await response.text());
+    const incoming = [];
+    for (const result of kongResults) {
+      const response = await api(`/api/articles/kong?url=${encodeURIComponent(result.url)}`);
+      if (!response.ok) throw new Error(`Cannot read a captured Kong article (${response.status})`);
+      incoming.push(await response.json());
+    }
+    console.log(JSON.stringify(await publishKongFeed(mergeKongEntries(existing, incoming), workerUrl, publishSecret)));
+  }
+  for (const source of new Set(report.filter(item => !item.error && !item.filtered && (!item.cached || item.source === "kong")).map(item => item.source))) {
     const feedUrl = `${workerUrl}/rss/${source === "kong" ? "kong-blog" : source}.xml`;
     const hubResponse = await fetch("https://pubsubhubbub.appspot.com/", {
       method: "POST",

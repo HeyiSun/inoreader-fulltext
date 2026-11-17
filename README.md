@@ -24,7 +24,7 @@ The workflow is event-triggered and can also be run manually from GitHub Actions
 - [OpenAI Developer Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/openai-developer.xml)
 - [Kong Blog](https://inoreader-fulltext.inoreader-fulltext.workers.dev/rss/kong-blog.xml)
 
-The original Inoreader subscriptions trigger capture jobs. Read the generated subscriptions for the extracted content. Each output feed contains the latest 20 captured articles. Successful publications notify a WebSub hub, while delivery timing also depends on Inoreader's feed refresh.
+The original Inoreader subscriptions trigger capture jobs. Read the generated subscriptions for the extracted content. OpenAI output feeds contain the latest 20 captured articles. The Kong feed retains its selected historical articles and merges new captures. Successful publications notify a WebSub hub, while delivery timing also depends on Inoreader's feed refresh.
 
 ## Extraction limits
 
@@ -34,11 +34,11 @@ Kong uses the article's `.toc-body` container, retaining the article text, code 
 
 Interactive figures become static snapshots. Figures that require unavailable client-side data retain a link to the original article. A changed website layout, unavailable upstream feed, or an expired GitHub trigger token can require maintenance. Failed captures are visible in GitHub Actions and can be rerun there. This deployment uses no AI model calls.
 
-## Kong technical history
+## Kong category selection and history
 
-`npm run backfill:kong` builds a historical feed for Engineering, Educational and Learning Center. It discovers article URLs from Kong's official sitemap, keeps the original publication dates, and caches each completed article under `artifacts/kong-history-entries` so interrupted work can resume.
+`npm run backfill:kong` backfills Engineering, Educational and Learning Center into the existing Kong feed. These categories also filter new webhooks and captures. The script discovers article URLs from Kong's official sitemap, keeps the original publication dates, and caches each completed article under `artifacts/kong-history-entries` so interrupted work can resume.
 
-With `WORKER_URL` and `PUBLISH_SECRET`, a successful complete run publishes `/rss/kong-technical-history.xml`. This historical feed is stored as one compressed RSS document in KV. A partial or failed run keeps its local results and report without replacing the published archive.
+With `WORKER_URL` and `PUBLISH_SECRET`, a successful complete run publishes `/rss/kong-blog.xml`. The feed is stored as one compressed RSS document in KV. Capture jobs merge new selected articles into this same feed. GitHub Actions queues these jobs sequentially to keep concurrent publications from overwriting each other. A partial or failed backfill keeps its local results and report without replacing the published feed.
 
 `BACKFILL_LIMIT` can restrict a local validation run. Limited runs only write local artifacts.
 

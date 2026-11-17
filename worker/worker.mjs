@@ -1,4 +1,5 @@
 import { renderRss } from "../lib/rss.mjs";
+import { isKongTechnicalArticle } from "../lib/kong-categories.mjs";
 export { escapeXml } from "../lib/rss.mjs";
 
 const SOURCES = {
@@ -9,8 +10,8 @@ const SOURCES = {
 };
 
 const ALLOWED_HOSTS = new Set(["openai.com", "www.openai.com", "developers.openai.com", "konghq.com", "www.konghq.com"]);
-const KONG_ARCHIVE_PATH = "/rss/kong-technical-history.xml";
-const KONG_ARCHIVE_KEY = "archive:kong-technical-history";
+const KONG_ARCHIVE_PATH = "/rss/kong-blog.xml";
+const KONG_ARCHIVE_KEY = "archive:kong";
 
 
 export function normalizeItems(payload) {
@@ -56,9 +57,19 @@ async function renderFeed(request, env, source) {
   const base = new URL(request.url).origin;
   const feedUrl = base + feedPath(source);
   const websiteUrl = source === "kong" ? "https://konghq.com/blog" : "https://openai.com/news/";
+  if (source === "kong") {
+    const archive = await env.CONTENT.getWithMetadata(KONG_ARCHIVE_KEY, "arrayBuffer");
+    if (archive.value) return new Response(archive.value, { encodeBody: "manual", headers: {
+      "Content-Type": "application/rss+xml; charset=utf-8",
+      "Content-Encoding": "gzip",
+      "Cache-Control": "public, max-age=30",
+      "Access-Control-Allow-Origin": "*"
+    } });
+  }
   const listed = await env.CONTENT.list({ prefix: `article:${source}:`, limit: 1000 });
   const newest = listed.keys.sort((a, b) => (b.metadata?.published || 0) - (a.metadata?.published || 0)).slice(0, 20);
-  const entries = (await Promise.all(newest.map(key => env.CONTENT.get(key.name, "json")))).filter(Boolean);
+  const entries = (await Promise.all(newest.map(key => env.CONTENT.get(key.name, "json"))))
+    .filter(entry => entry && (source !== "kong" || isKongTechnicalArticle(entry.url)));
   const xml = renderRss(entries, {
     source,
     title: SOURCES[source],
@@ -81,15 +92,8 @@ export default {
       if (request.method === "GET" && url.pathname === "/") {
         return json({ service: "inoreader-fulltext", feeds: Object.keys(SOURCES).map(feedPath) });
       }
-      if (request.method === "GET" && url.pathname === KONG_ARCHIVE_PATH) {
-        const archive = await env.CONTENT.getWithMetadata(KONG_ARCHIVE_KEY, "arrayBuffer");
-        if (!archive.value) return new Response("Archive not published", { status: 404 });
-        return new Response(archive.value, { encodeBody: "manual", headers: {
-          "Content-Type": "application/rss+xml; charset=utf-8",
-          "Content-Encoding": "gzip",
-          "Cache-Control": "public, max-age=60",
-          "Access-Control-Allow-Origin": "*"
-        } });
+      if (request.method === "GET" && url.pathname === "/rss/kong-technical-history.xml") {
+        return Response.redirect(url.origin + KONG_ARCHIVE_PATH, 301);
       }
       const feedSlug = parts[1]?.replace(/\.xml$/, "");
       const feedSource = feedSlug === "kong-blog" ? "kong" : feedSlug;
@@ -107,7 +111,7 @@ export default {
       }
       if (request.method === "POST" && parts[0] === "hooks" && parts[1] === env.HOOK_SECRET) {
         const payload = await request.json();
-        const items = normalizeItems(payload);
+        const items = normalizeItems(payload).filter(item => item.source !== "kong" || isKongTechnicalArticle(item.url));
         if (!items.length) return json({ accepted: 0 });
         const response = await fetch(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/workflows/${env.GITHUB_WORKFLOW}/dispatches`, {
           method: "POST",
@@ -126,7 +130,7 @@ export default {
       if (!env.PUBLISH_SECRET || request.headers.get("Authorization") !== `Bearer ${env.PUBLISH_SECRET}`) {
         return json({ error: "Unauthorized" }, 401);
       }
-      if (request.method === "PUT" && url.pathname === "/api/archives/kong-technical-history") {
+      if (request.method === "PUT" && url.pathname === "/api/archives/kong") {
         const count = Number(request.headers.get("X-Article-Count"));
         if (!Number.isInteger(count) || count < 1 || count > 5000) return json({ error: "Invalid article count" }, 400);
         const body = await request.arrayBuffer();
@@ -156,9 +160,10 @@ export default {
         if (request.method === "PUT") {
           const article = await request.json();
           const normalized = normalizeItems({ items: [{ ...article, source }] })[0];
+          if (source === "kong" && !isKongTechnicalArticle(normalized.url)) return json({ error: "Kong category is not selected" }, 400);
           if (await articleKey(normalized.url) !== id) return json({ error: "URL mismatch" }, 400);
           if (typeof article.html !== "string" || article.html.length > 1500000) return json({ error: "Invalid article HTML" }, 400);
-          const entry = { ...normalized, id, html: article.html, cover: article.cover || "", capturedAt: Date.now() };
+          const entry = { ...normalized, id, html: article.html, cover: article.cover || "", tags: article.tags || [], capturedAt: Date.now() };
           await env.CONTENT.put(key, JSON.stringify(entry), { metadata: { published: entry.published } });
           return json({ id, feed: url.origin + feedPath(source) }, 201);
         }
