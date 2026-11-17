@@ -91,9 +91,12 @@ async function loadFromFulltextFeed(page, article) {
       if (typeof body !== "string" || body.length < 1000) continue;
       const safe = sanitizeHtml(body, {
         allowedTags: sanitizeHtml.defaults.allowedTags.concat([
-          "img", "figure", "figcaption", "svg", "g", "path", "rect", "circle", "line", "polyline", "polygon", "text", "tspan", "defs", "clipPath", "marker", "pattern"
+          "img", "figure", "figcaption", "svg", "g", "path", "rect", "circle", "line", "polyline", "polygon", "text", "tspan", "defs", "clipPath", "marker", "pattern", "button", "select", "option", "input", "label", "dialog"
         ]),
         allowedAttributes: { "*": ["*"] },
+        transformTags: {
+          "*": (tagName, attribs) => ({ tagName, attribs: Object.fromEntries(Object.entries(attribs).filter(([name]) => !name.toLowerCase().startsWith("on"))) })
+        },
         parser: { lowerCaseAttributeNames: false, lowerCaseTags: false },
         allowedSchemes: ["http", "https", "data"],
         allowVulnerableTags: false
@@ -106,17 +109,22 @@ async function loadFromFulltextFeed(page, article) {
         img{max-width:100%;height:auto;display:block;margin:16px auto}svg{max-width:100%}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
         svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
         ${fallbackFigureCss}
-        main{--document-width:1100px;--container-inline-gutter:0px;--type-caption-size:12px;--type-p1-size:16px}
+        main{--document-width:1100px;--container-inline-gutter:0px;--type-caption-size:12px;--type-caption-line:1.5;--type-xs-size:10px;--type-xs-line:1.5;--type-p1-size:16px;--spacing:4px}
         main ._0cz0VG_frame{width:100%;margin:0;--figure-inset:18px;font-size:12px;line-height:1.45}
         main ._0cz0VG_models{grid-auto-columns:minmax(0,1fr);overflow:visible}
         main ._0cz0VG_root{padding:18px}
         main ._0cz0VG_metrics{font-size:10px;gap:8px}
         main ._0cz0VG_card{padding:12px}
         main ._0cz0VG_card p{font-size:10px;line-height:1.4}
-        main ._0cz0VG_controls,main ._0cz0VG_settings,main ._0cz0VG_results{display:none}
-        main ._6gQH-a_handle{display:flex}
+        main [hidden],main dialog,main ._0cz0VG_controls,main ._0cz0VG_settings,main ._0cz0VG_results{display:none!important}
+        main ._0cz0VG_metrics dd{margin:0}
+        main ._0cz0VG_metrics dd[hidden]{display:none!important}
+        main ._6gQH-a_handle{display:flex!important}
       </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`, {waitUntil:"domcontentloaded"});
       await page.evaluate(async () => {
+        for (const handle of document.querySelectorAll("._6gQH-a_handle")) {
+          handle.style.fontSize = "12px";
+        }
         for (const svg of document.querySelectorAll("svg[viewBox]")) {
           const box = svg.viewBox.baseVal;
           if (box.width > 100 && box.height > 40) {
