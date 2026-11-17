@@ -106,6 +106,15 @@ async function loadFromFulltextFeed(page, article) {
         img{max-width:100%;height:auto;display:block;margin:16px auto}svg{max-width:100%}figcaption{font-size:15px;color:#555}button,input,select,nav{display:none}
         svg{color:#222;--line:#666;--ink:#222;--muted:#777;--accent:#9b76de;--bg:#fff}
         ${fallbackFigureCss}
+        main{--document-width:1100px;--container-inline-gutter:0px;--type-caption-size:12px;--type-p1-size:16px}
+        main ._0cz0VG_frame{width:100%;margin:0;--figure-inset:18px;font-size:12px;line-height:1.45}
+        main ._0cz0VG_models{grid-auto-columns:minmax(0,1fr);overflow:visible}
+        main ._0cz0VG_root{padding:18px}
+        main ._0cz0VG_metrics{font-size:10px;gap:8px}
+        main ._0cz0VG_card{padding:12px}
+        main ._0cz0VG_card p{font-size:10px;line-height:1.4}
+        main ._0cz0VG_controls,main ._0cz0VG_settings,main ._0cz0VG_results{display:none}
+        main ._6gQH-a_handle{display:flex}
       </style></head><body><main><h1>${sanitizeHtml(match.title || article.title, {allowedTags:[]})}</h1>${safe}</main></body></html>`, {waitUntil:"domcontentloaded"});
       await page.evaluate(async () => {
         for (const svg of document.querySelectorAll("svg[viewBox]")) {
@@ -117,6 +126,9 @@ async function loadFromFulltextFeed(page, article) {
             svg.style.width = "16px";
             svg.style.height = "16px";
           }
+        }
+        for (const guide of document.querySelectorAll("._6gQH-a_guides")) {
+          guide.style.visibility = "hidden";
         }
         await Promise.race([
           Promise.all(Array.from(document.querySelectorAll("img")).map(image => image.decode().catch(() => {}))),
