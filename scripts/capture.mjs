@@ -202,6 +202,12 @@ async function capture(article, browser) {
       if (nested) continue;
       const drawable = await figure.evaluate(el => Boolean(el.querySelector('svg,canvas,[role="img"],[role="group"]')));
       if (!drawable) continue;
+      await figure.evaluate(el => {
+        const widths = Array.from(el.querySelectorAll("*")).filter(node => node.getBoundingClientRect().width > 0).map(node => node.scrollWidth);
+        const width = Math.min(2000, Math.max(el.clientWidth, ...widths));
+        el.style.maxWidth = "none";
+        el.style.width = `${width}px`;
+      });
       await figure.scrollIntoViewIfNeeded();
       const buffer = await figure.screenshot({ animations: "disabled", timeout: 15000 });
       const url = await publishImage(buffer, id, snapshots.length);
