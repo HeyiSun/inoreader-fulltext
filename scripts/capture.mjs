@@ -224,6 +224,9 @@ async function capture(article, browser) {
 
     const html = await page.evaluate(({ selector, snapshots, articleUrl }) => {
       const root = document.querySelector(selector).cloneNode(true);
+      if (selector === "main .toc-body") {
+        for (const element of root.querySelectorAll(".agent")) element.remove();
+      }
       const figures = Array.from(root.querySelectorAll("figure"));
       for (const snapshot of snapshots) {
         const target = figures[snapshot.index];
